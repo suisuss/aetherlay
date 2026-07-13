@@ -222,7 +222,7 @@ func TestEffectiveCapacityCeilingNoBlackHoleBeforeEvidence(t *testing.T) {
 	server := NewServer(cfg, valkeyClient, learningTestConfig())
 
 	ep := config.Endpoint{Provider: "alchemy"}
-	_, _, ok := server.effectiveCapacityCeiling("ethereum", "fresh-endpoint", ep)
+	_, _, ok := server.effectiveCapacityCeiling(context.Background(), "ethereum", "fresh-endpoint", ep)
 	if ok {
 		t.Error("Expected no ceiling for an endpoint with no static Capacity and no learned estimate yet")
 	}
@@ -254,7 +254,7 @@ func TestGetAvailableEndpointsSkipsEndpointOnceLearnedEstimateExhausted(t *testi
 	valkeyClient.IncrementCapacityCount(ctx, "ethereum", "learned-tight", 60)
 
 	server := NewServer(cfg, valkeyClient, learningTestConfig())
-	endpoints := server.getAvailableEndpoints("ethereum", false, false)
+	endpoints := server.getAvailableEndpoints(context.Background(), "ethereum", false, false)
 
 	if len(endpoints) != 1 {
 		t.Fatalf("Expected 1 available endpoint, got %d", len(endpoints))
@@ -290,7 +290,7 @@ func TestSelectBestEndpointByRoleWeightsLearnedAgainstStatic(t *testing.T) {
 	}
 
 	server := NewServer(&config.Config{}, valkeyClient, learningTestConfig())
-	best := server.selectBestEndpointByRole("ethereum", endpoints, "primary")
+	best := server.selectBestEndpointByRole(context.Background(), "ethereum", endpoints, "primary")
 
 	if best == nil {
 		t.Fatal("Expected a best endpoint")
@@ -315,7 +315,7 @@ func TestEffectiveCapacityCeilingReflectsLazyGrowth(t *testing.T) {
 	}
 
 	server := NewServer(cfg, valkeyClient, learningTestConfig())
-	maxRequests, windowSeconds, ok := server.effectiveCapacityCeiling("ethereum", "ep1", config.Endpoint{Provider: "alchemy"})
+	maxRequests, windowSeconds, ok := server.effectiveCapacityCeiling(context.Background(), "ethereum", "ep1", config.Endpoint{Provider: "alchemy"})
 
 	if !ok {
 		t.Fatal("Expected a resolvable ceiling")
@@ -340,7 +340,7 @@ func TestEffectiveCapacityCeilingUnaffectedWhenLearningNotOptedIn(t *testing.T) 
 	// appConfig.CapacityLearningEnabled left at zero-value false, as in every pre-existing test.
 	server := NewServer(cfg, valkeyClient, appConfig)
 
-	_, _, ok := server.effectiveCapacityCeiling("ethereum", "ep1", config.Endpoint{Provider: "alchemy"})
+	_, _, ok := server.effectiveCapacityCeiling(context.Background(), "ethereum", "ep1", config.Endpoint{Provider: "alchemy"})
 	if ok {
 		t.Error("Expected no ceiling for an unconfigured endpoint when learning is not opted in")
 	}
@@ -419,7 +419,7 @@ func TestRecordCapacityUsageWritesToFrozenWindowBucket(t *testing.T) {
 	}
 
 	// The gating path must observe the same count recordCapacityUsage just wrote.
-	maxRequests, windowSeconds, ok := server.effectiveCapacityCeiling("ethereum", "ep1", ep)
+	maxRequests, windowSeconds, ok := server.effectiveCapacityCeiling(context.Background(), "ethereum", "ep1", ep)
 	if !ok {
 		t.Fatal("Expected a resolvable ceiling")
 	}
@@ -589,7 +589,7 @@ func TestCapacityValkeyLookupsUseRequestScopedTimeouts(t *testing.T) {
 	server := NewServer(cfg, client, learningTestConfig())
 
 	// Exercises effectiveCapacityCeiling + GetCapacityCount via getEndpointsByRole.
-	server.getAvailableEndpoints("ethereum", false, false)
+	server.getAvailableEndpoints(context.Background(), "ethereum", false, false)
 	// Exercises capacityWindowSeconds directly.
 	server.capacityWindowSeconds("ethereum", "ep1", cfg.Endpoints["ethereum"]["ep1"])
 

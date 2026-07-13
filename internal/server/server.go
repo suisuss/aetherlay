@@ -425,7 +425,7 @@ func (s *Server) handleRequestHTTP(chain string) http.HandlerFunc {
 		}
 
 		// Get all available endpoints with public-first logic
-		allEndpoints := s.getAvailableEndpoints(chain, archive, false)
+		allEndpoints := s.getAvailableEndpoints(ctx, chain, archive, false)
 
 		log.Debug().Str("chain", chain).Bool("archive", archive).Int("available_endpoints", len(allEndpoints)).Msg("Retrieved available endpoints for HTTP request")
 
@@ -451,7 +451,7 @@ func (s *Server) handleRequestHTTP(chain string) http.HandlerFunc {
 			}
 
 			// Select the best endpoint based on requests count and endpoint type
-			endpoint := s.selectBestEndpoint(chain, allEndpoints)
+			endpoint := s.selectBestEndpoint(ctx, chain, allEndpoints)
 			if endpoint == nil {
 				log.Debug().Str("chain", chain).Int("retry", retryCount).Msg("No suitable endpoint found for HTTP request")
 				break
@@ -587,7 +587,7 @@ func (s *Server) handleRequestWS(chain string) http.HandlerFunc {
 			archive := r.URL.Query().Get("archive") == "true"
 
 			// Get all available endpoints with public-first logic
-			allEndpoints := s.getAvailableEndpoints(chain, archive, true)
+			allEndpoints := s.getAvailableEndpoints(ctx, chain, archive, true)
 
 			log.Debug().Str("chain", chain).Bool("archive", archive).Int("available_endpoints", len(allEndpoints)).Msg("Retrieved available endpoints for WebSocket request")
 
@@ -612,7 +612,7 @@ func (s *Server) handleRequestWS(chain string) http.HandlerFunc {
 				}
 
 				// Select the best endpoint based on request counts
-				endpoint := s.selectBestEndpoint(chain, allEndpoints)
+				endpoint := s.selectBestEndpoint(ctx, chain, allEndpoints)
 				if endpoint == nil || endpoint.Endpoint.WSURL == "" {
 					log.Debug().Str("chain", chain).Int("retry", retryCount).Msg("No suitable WebSocket endpoint found")
 					break
@@ -821,7 +821,7 @@ type EndpointWithID struct {
 }
 
 // getAvailableEndpoints returns available endpoints for a chain and protocol with support for public-first hierarchy
-func (s *Server) getAvailableEndpoints(chain string, archive bool, ws bool) []EndpointWithID {
+func (s *Server) getAvailableEndpoints(ctx context.Context, chain string, archive bool, ws bool) []EndpointWithID {
 	var endpoints []EndpointWithID
 
 	chainEndpoints, exists := s.config.GetEndpointsForChain(chain)
@@ -830,9 +830,9 @@ func (s *Server) getAvailableEndpoints(chain string, archive bool, ws bool) []En
 	}
 
 	// Get all endpoint types
-	publicEndpoints := s.getEndpointsByRole(chainEndpoints, "public", chain, archive, ws)
-	primaryEndpoints := s.getEndpointsByRole(chainEndpoints, "primary", chain, archive, ws)
-	fallbackEndpoints := s.getEndpointsByRole(chainEndpoints, "fallback", chain, archive, ws)
+	publicEndpoints := s.getEndpointsByRole(ctx, chainEndpoints, "public", chain, archive, ws)
+	primaryEndpoints := s.getEndpointsByRole(ctx, chainEndpoints, "primary", chain, archive, ws)
+	fallbackEndpoints := s.getEndpointsByRole(ctx, chainEndpoints, "fallback", chain, archive, ws)
 
 	// Append endpoints in priority order based on PUBLIC_FIRST setting
 	if s.appConfig.PublicFirst {
@@ -853,7 +853,7 @@ func (s *Server) getAvailableEndpoints(chain string, archive bool, ws bool) []En
 }
 
 // getEndpointsByRole returns healthy endpoints for a specific role
-func (s *Server) getEndpointsByRole(chainEndpoints config.ChainEndpoints, role string, chain string, archive bool, ws bool) []EndpointWithID {
+func (s *Server) getEndpointsByRole(ctx context.Context, chainEndpoints config.ChainEndpoints, role string, chain string, archive bool, ws bool) []EndpointWithID {
 	var endpoints []EndpointWithID
 
 	for endpointID, endpoint := range chainEndpoints {
@@ -864,7 +864,7 @@ func (s *Server) getEndpointsByRole(chainEndpoints config.ChainEndpoints, role s
 				if !cacheHit {
 					// Cache miss, fetch from Valkey and populate cache
 					var err error
-					status, err = s.valkeyClient.GetEndpointStatus(context.Background(), chain, endpointID)
+					status, err = s.valkeyClient.GetEndpointStatus(ctx, chain, endpointID)
 					if err != nil {
 						continue
 					}
@@ -872,7 +872,7 @@ func (s *Server) getEndpointsByRole(chainEndpoints config.ChainEndpoints, role s
 				}
 
 				// Check if endpoint is rate limited
-				rateLimitState, err := s.valkeyClient.GetRateLimitState(context.Background(), chain, endpointID)
+				rateLimitState, err := s.valkeyClient.GetRateLimitState(ctx, chain, endpointID)
 				if err == nil && rateLimitState.RateLimited {
 					log.Debug().Str("chain", chain).Str("endpoint", endpointID).Str("role", role).Msg("Skipping rate-limited endpoint")
 					continue
@@ -884,8 +884,8 @@ func (s *Server) getEndpointsByRole(chainEndpoints config.ChainEndpoints, role s
 				// Independent of RateLimited above: this is a self-imposed budget, not
 				// a provider signal.
 				if s.appConfig.CapacityThrottlingEnabled {
-					if maxRequests, windowSeconds, hasCeiling := s.effectiveCapacityCeiling(chain, endpointID, endpoint); hasCeiling {
-						capCtx, capCancel := context.WithTimeout(context.Background(), 2*time.Second)
+					if maxRequests, windowSeconds, hasCeiling := s.effectiveCapacityCeiling(ctx, chain, endpointID, endpoint); hasCeiling {
+						capCtx, capCancel := context.WithTimeout(ctx, 2*time.Second)
 						count, err := s.valkeyClient.GetCapacityCount(capCtx, chain, endpointID, windowSeconds)
 						capCancel()
 						if err == nil {
@@ -920,7 +920,7 @@ func (s *Server) getEndpointsByRole(chainEndpoints config.ChainEndpoints, role s
 }
 
 // selectBestEndpoint selects the best endpoint based on endpoint type priority and request counts
-func (s *Server) selectBestEndpoint(chain string, endpoints []EndpointWithID) *EndpointWithID {
+func (s *Server) selectBestEndpoint(ctx context.Context, chain string, endpoints []EndpointWithID) *EndpointWithID {
 	if len(endpoints) == 0 {
 		return nil
 	}
@@ -935,7 +935,7 @@ func (s *Server) selectBestEndpoint(chain string, endpoints []EndpointWithID) *E
 
 	// Try each endpoint type in priority order
 	for _, role := range priorityOrder {
-		bestEndpoint := s.selectBestEndpointByRole(chain, endpoints, role)
+		bestEndpoint := s.selectBestEndpointByRole(ctx, chain, endpoints, role)
 		if bestEndpoint != nil {
 			return bestEndpoint
 		}
@@ -962,7 +962,7 @@ type endpointCeiling struct {
 // lower-capacity one. If any candidate has no ceiling at all yet, this falls back to the
 // original behavior (lowest raw 24h count wins) to avoid comparing endpoints on
 // incompatible units.
-func (s *Server) selectBestEndpointByRole(chain string, endpoints []EndpointWithID, role string) *EndpointWithID {
+func (s *Server) selectBestEndpointByRole(ctx context.Context, chain string, endpoints []EndpointWithID, role string) *EndpointWithID {
 	var candidateIndices []int
 	ceilings := make(map[int]endpointCeiling)
 	allHaveCeiling := true
@@ -971,7 +971,7 @@ func (s *Server) selectBestEndpointByRole(chain string, endpoints []EndpointWith
 			continue
 		}
 		candidateIndices = append(candidateIndices, i)
-		maxRequests, windowSeconds, ok := s.effectiveCapacityCeiling(chain, endpoints[i].ID, endpoints[i].Endpoint)
+		maxRequests, windowSeconds, ok := s.effectiveCapacityCeiling(ctx, chain, endpoints[i].ID, endpoints[i].Endpoint)
 		ceilings[i] = endpointCeiling{maxRequests: maxRequests, windowSeconds: windowSeconds, ok: ok}
 		if !ok {
 			allHaveCeiling = false
@@ -982,7 +982,7 @@ func (s *Server) selectBestEndpointByRole(chain string, endpoints []EndpointWith
 	var minScore float64 = -1
 
 	for _, i := range candidateIndices {
-		r24h, _, _, err := s.valkeyClient.GetCombinedRequestCounts(context.Background(), chain, endpoints[i].ID)
+		r24h, _, _, err := s.valkeyClient.GetCombinedRequestCounts(ctx, chain, endpoints[i].ID)
 		// Skip endpoints where we can't get request count data
 		if err != nil {
 			continue
@@ -991,9 +991,11 @@ func (s *Server) selectBestEndpointByRole(chain string, endpoints []EndpointWith
 		score := float64(r24h)
 		if allHaveCeiling {
 			c := ceilings[i]
-			dailyBudget := float64(c.maxRequests) * (86400.0 / float64(c.windowSeconds))
-			if dailyBudget > 0 {
-				score = float64(r24h) / dailyBudget
+			if c.windowSeconds > 0 {
+				dailyBudget := float64(c.maxRequests) * (86400.0 / float64(c.windowSeconds))
+				if dailyBudget > 0 {
+					score = float64(r24h) / dailyBudget
+				}
 			}
 		}
 
@@ -1016,21 +1018,28 @@ func (s *Server) selectBestEndpointByRole(chain string, endpoints []EndpointWith
 //  3. Otherwise -> ok=false: no ceiling at all, never proactively skipped. Absence of
 //     evidence isn't evidence of a limit - the endpoint remains fully covered by the
 //     independent, reactive RateLimitState check the instant it's actually rate limited.
-func (s *Server) effectiveCapacityCeiling(chain, endpointID string, ep config.Endpoint) (maxRequests int64, windowSeconds int, ok bool) {
+func (s *Server) effectiveCapacityCeiling(ctx context.Context, chain, endpointID string, ep config.Endpoint) (maxRequests int64, windowSeconds int, ok bool) {
 	if ep.Capacity != nil {
+		if ep.Capacity.MaxRequests <= 0 || ep.Capacity.WindowSeconds <= 0 {
+			return 0, 0, false
+		}
 		return int64(ep.Capacity.MaxRequests), ep.Capacity.WindowSeconds, true
 	}
 	if !s.appConfig.CapacityLearningEnabled {
 		return 0, 0, false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	estimate, err := s.valkeyClient.GetCapacityEstimate(ctx, chain, endpointID)
+	estCtx, estCancel := context.WithTimeout(ctx, 2*time.Second)
+	defer estCancel()
+	estimate, err := s.valkeyClient.GetCapacityEstimate(estCtx, chain, endpointID)
 	if err != nil || !estimate.HasEstimate {
 		return 0, 0, false
 	}
 	params := config.ResolveCapacityLearning(ep.CapacityLearning)
-	return store.EffectiveMaxRequests(*estimate, params, time.Now()), estimate.WindowSeconds, true
+	maxReqs := store.EffectiveMaxRequests(*estimate, params, time.Now())
+	if maxReqs <= 0 || estimate.WindowSeconds <= 0 {
+		return 0, 0, false
+	}
+	return maxReqs, estimate.WindowSeconds, true
 }
 
 // removeEndpointByID removes an endpoint from a slice by its ID

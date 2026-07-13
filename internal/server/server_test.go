@@ -671,7 +671,7 @@ func TestGetAvailableEndpointsSkipsRateLimited(t *testing.T) {
 	server := NewServer(cfg, mockValkey, appConfig)
 
 	// Get available endpoints
-	endpoints := server.getAvailableEndpoints("ethereum", false, false)
+	endpoints := server.getAvailableEndpoints(context.Background(), "ethereum", false, false)
 
 	// Should only have the healthy endpoint, not the rate-limited one
 	if len(endpoints) != 1 {

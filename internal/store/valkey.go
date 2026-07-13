@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -434,6 +435,9 @@ func (r *ValkeyClient) IncrementCapacityCount(ctx context.Context, chain, endpoi
 // GetCapacityCount returns the current count for an endpoint's capacity window,
 // or 0 if nothing has been recorded in the current window yet.
 func (r *ValkeyClient) GetCapacityCount(ctx context.Context, chain, endpoint string, windowSeconds int) (int64, error) {
+	if windowSeconds <= 0 {
+		return 0, fmt.Errorf("GetCapacityCount: windowSeconds must be positive, got %d", windowSeconds)
+	}
 	key := capacityBucketKey(chain, endpoint, windowSeconds)
 	result := r.client.Do(ctx, r.client.B().Get().Key(key).Build())
 

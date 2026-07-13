@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -163,11 +164,11 @@ func (m *MockValkeyClient) IncrementCapacityCount(_ context.Context, chain, endp
 // GetCapacityCount returns the mock's in-memory capacity counter for the endpoint's
 // current fixed window, or 0 if nothing has been recorded in that window yet.
 func (m *MockValkeyClient) GetCapacityCount(_ context.Context, chain, endpoint string, windowSeconds int) (int64, error) {
+	if windowSeconds <= 0 {
+		return 0, fmt.Errorf("GetCapacityCount: windowSeconds must be positive, got %d", windowSeconds)
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if windowSeconds <= 0 {
-		windowSeconds = 1
-	}
 	key := chain + ":" + endpoint
 	bucket := m.NowFunc().Unix() / int64(windowSeconds)
 	if buckets, ok := m.capacityCounts[key]; ok {

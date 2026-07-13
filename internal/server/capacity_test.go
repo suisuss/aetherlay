@@ -47,7 +47,7 @@ func TestGetAvailableEndpointsSkipsAtCapacityEndpoint(t *testing.T) {
 	appConfig.CapacityThrottlingEnabled = true
 	server := NewServer(cfg, valkeyClient, appConfig)
 
-	endpoints := server.getAvailableEndpoints("ethereum", false, false)
+	endpoints := server.getAvailableEndpoints(context.Background(), "ethereum", false, false)
 
 	if len(endpoints) != 1 {
 		t.Fatalf("Expected 1 available endpoint, got %d", len(endpoints))
@@ -85,7 +85,7 @@ func TestGetAvailableEndpointsCapacityKillSwitch(t *testing.T) {
 	appConfig.CapacityThrottlingEnabled = false
 	server := NewServer(cfg, valkeyClient, appConfig)
 
-	endpoints := server.getAvailableEndpoints("ethereum", false, false)
+	endpoints := server.getAvailableEndpoints(context.Background(), "ethereum", false, false)
 
 	if len(endpoints) != 1 {
 		t.Fatalf("Expected the at-capacity endpoint to still be available with the kill switch off, got %d endpoints", len(endpoints))
@@ -113,7 +113,7 @@ func TestSelectBestEndpointByRoleFallsBackWhenNotAllHaveCapacity(t *testing.T) {
 	}
 
 	server := NewServer(&config.Config{}, valkeyClient, createTestConfig())
-	best := server.selectBestEndpointByRole("ethereum", endpoints, "primary")
+	best := server.selectBestEndpointByRole(context.Background(), "ethereum", endpoints, "primary")
 
 	if best == nil {
 		t.Fatal("Expected a best endpoint")
@@ -147,7 +147,7 @@ func TestSelectBestEndpointByRoleWeightsByCapacityWhenAllConfigured(t *testing.T
 	}
 
 	server := NewServer(&config.Config{}, valkeyClient, createTestConfig())
-	best := server.selectBestEndpointByRole("ethereum", endpoints, "primary")
+	best := server.selectBestEndpointByRole(context.Background(), "ethereum", endpoints, "primary")
 
 	if best == nil {
 		t.Fatal("Expected a best endpoint")
