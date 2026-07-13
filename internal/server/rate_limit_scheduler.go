@@ -253,6 +253,9 @@ func (rls *RateLimitScheduler) performRecoveryCheck(ctx context.Context, chain, 
 			state.CurrentBackoff = rateLimitConfig.InitialBackoff
 		}
 	} else {
+		if state.CurrentBackoff == 0 {
+			state.CurrentBackoff = rateLimitConfig.InitialBackoff
+		}
 		newBackoff := int(float64(state.CurrentBackoff) * rateLimitConfig.BackoffMultiplier)
 		state.CurrentBackoff = min(newBackoff, rateLimitConfig.MaxBackoff)
 	}
