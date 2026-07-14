@@ -528,3 +528,124 @@ func TestEndpointWithCapacityLearningOverride(t *testing.T) {
 		t.Errorf("Expected DecreaseFactor to be 0.75, got %f", decoded.CapacityLearning.DecreaseFactor)
 	}
 }
+
+// TestLoadConfigResetsNegativeCapacityLearningWindowSeconds guards against a negative
+// window_seconds override reaching the divisor path that capacityBucketKey uses, which
+// would produce a nonsensical bucket key. Negative values are reset to zero so
+// ResolveCapacityLearning falls back to the package default (60 s), while zero (omitted)
+// is left alone because it is the standard "not set" sentinel for ResolveCapacityLearning.
+func TestLoadConfigResetsNegativeCapacityLearningWindowSeconds(t *testing.T) {
+	tmpFile := "test_negative_cl_window.json"
+	content := `{
+		"ethereum": {
+			"negative-window": {
+				"provider": "alchemy",
+				"role": "primary",
+				"type": "full",
+				"http_url": "http://test.com",
+				"capacity_learning": {"window_seconds": -5, "decrease_factor": 0.5}
+			},
+			"valid-window": {
+				"provider": "alchemy",
+				"role": "primary",
+				"type": "full",
+				"http_url": "http://test2.com",
+				"capacity_learning": {"window_seconds": 30, "decrease_factor": 0.5}
+			}
+		}
+	}`
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	defer os.Remove(tmpFile)
+
+	cfg, err := LoadConfig(tmpFile)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	endpoints := cfg.Endpoints["ethereum"]
+
+	if endpoints["negative-window"].CapacityLearning == nil {
+		t.Fatal("Expected CapacityLearning struct to remain (only the bad field is reset)")
+	}
+	if endpoints["negative-window"].CapacityLearning.WindowSeconds != 0 {
+		t.Errorf("Expected negative window_seconds to be reset to 0, got %d", endpoints["negative-window"].CapacityLearning.WindowSeconds)
+	}
+	if endpoints["valid-window"].CapacityLearning == nil {
+		t.Fatal("Expected CapacityLearning to remain set for a valid override")
+	}
+	if endpoints["valid-window"].CapacityLearning.WindowSeconds != 30 {
+		t.Errorf("Expected valid window_seconds to be untouched (30), got %d", endpoints["valid-window"].CapacityLearning.WindowSeconds)
+	}
+}
+
+// TestLoadConfigResetsOutOfRangeCapacityLearningDecreaseFactor guards against a
+// DecreaseFactor outside (0, 1) defeating the AIMD control loop: a value >= 1 would grow
+// the ceiling on a rate-limit hit instead of shrinking it; a negative value would invert
+// the ceiling entirely. Both cases are reset to zero so ResolveCapacityLearning falls
+// back to the package default (0.5).
+func TestLoadConfigResetsOutOfRangeCapacityLearningDecreaseFactor(t *testing.T) {
+	tmpFile := "test_bad_decrease_factor.json"
+	content := `{
+		"ethereum": {
+			"factor-one": {
+				"provider": "alchemy",
+				"role": "primary",
+				"type": "full",
+				"http_url": "http://test.com",
+				"capacity_learning": {"decrease_factor": 1.0}
+			},
+			"factor-gt-one": {
+				"provider": "alchemy",
+				"role": "primary",
+				"type": "full",
+				"http_url": "http://test2.com",
+				"capacity_learning": {"decrease_factor": 1.5}
+			},
+			"factor-negative": {
+				"provider": "alchemy",
+				"role": "primary",
+				"type": "full",
+				"http_url": "http://test3.com",
+				"capacity_learning": {"decrease_factor": -0.5}
+			},
+			"factor-valid": {
+				"provider": "alchemy",
+				"role": "primary",
+				"type": "full",
+				"http_url": "http://test4.com",
+				"capacity_learning": {"decrease_factor": 0.75}
+			}
+		}
+	}`
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	defer os.Remove(tmpFile)
+
+	cfg, err := LoadConfig(tmpFile)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	endpoints := cfg.Endpoints["ethereum"]
+
+	for _, id := range []string{"factor-one", "factor-gt-one", "factor-negative"} {
+		ep := endpoints[id]
+		if ep.CapacityLearning == nil {
+			t.Fatalf("%s: expected CapacityLearning struct to remain (only the bad field is reset)", id)
+		}
+		if ep.CapacityLearning.DecreaseFactor != 0 {
+			t.Errorf("%s: expected out-of-range decrease_factor to be reset to 0, got %f", id, ep.CapacityLearning.DecreaseFactor)
+		}
+	}
+
+	valid := endpoints["factor-valid"]
+	if valid.CapacityLearning == nil {
+		t.Fatal("Expected CapacityLearning to remain set for a valid decrease_factor")
+	}
+	if valid.CapacityLearning.DecreaseFactor != 0.75 {
+		t.Errorf("Expected valid decrease_factor to be untouched (0.75), got %f", valid.CapacityLearning.DecreaseFactor)
+	}
+}

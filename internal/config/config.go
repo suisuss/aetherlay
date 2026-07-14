@@ -94,6 +94,7 @@ func LoadConfig(path string) (*Config, error) {
 		for endpointID, endpoint := range chainEndpoints {
 			substituteEnvVarsInEndpoint(&endpoint)
 			validateEndpointCapacity(chainName, endpointID, &endpoint)
+			validateEndpointCapacityLearning(chainName, endpointID, &endpoint)
 			config.Endpoints[chainName][endpointID] = endpoint
 		}
 	}
@@ -132,6 +133,34 @@ func validateEndpointCapacity(chain, endpointID string, endpoint *Endpoint) {
 			Int("max_requests", endpoint.Capacity.MaxRequests).
 			Msg("Endpoint's capacity.max_requests must be positive - disabling proactive capacity throttling for this endpoint")
 		endpoint.Capacity = nil
+	}
+}
+
+// validateEndpointCapacityLearning catches out-of-range CapacityLearning override fields.
+// A negative WindowSeconds would reach the same divisor path documented as hazardous in
+// validateEndpointCapacity. A DecreaseFactor outside (0, 1) would grow rather than shrink
+// the ceiling on a rate-limit hit, silently defeating the AIMD safety mechanism. Resets
+// the offending field to zero so ResolveCapacityLearning falls back to the package default,
+// rather than propagating a value that would corrupt the control loop.
+func validateEndpointCapacityLearning(chain, endpointID string, endpoint *Endpoint) {
+	if endpoint.CapacityLearning == nil {
+		return
+	}
+	if endpoint.CapacityLearning.WindowSeconds < 0 {
+		log.Warn().
+			Str("chain", chain).
+			Str("endpoint", endpointID).
+			Int("window_seconds", endpoint.CapacityLearning.WindowSeconds).
+			Msg("Endpoint's capacity_learning.window_seconds must not be negative - resetting to default")
+		endpoint.CapacityLearning.WindowSeconds = 0
+	}
+	if endpoint.CapacityLearning.DecreaseFactor != 0 && (endpoint.CapacityLearning.DecreaseFactor <= 0 || endpoint.CapacityLearning.DecreaseFactor >= 1) {
+		log.Warn().
+			Str("chain", chain).
+			Str("endpoint", endpointID).
+			Float64("decrease_factor", endpoint.CapacityLearning.DecreaseFactor).
+			Msg("Endpoint's capacity_learning.decrease_factor must be in (0, 1) - resetting to default")
+		endpoint.CapacityLearning.DecreaseFactor = 0
 	}
 }
 
