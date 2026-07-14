@@ -258,6 +258,39 @@ func (r *ValkeyClient) GetCombinedRequestCounts(ctx context.Context, chain, endp
 	return p24h + h24h, p1m + h1m, pAll + hAll, nil
 }
 
+// parseChainEndpointFromKey extracts the chain and endpoint from a scanned Valkey key,
+// given the prefix used to find it. Endpoint IDs are often URLs (e.g.
+// "https://test.example.com:8545") and can contain colons of their own, so only the
+// chain - which never contains a colon - is safe to cut from the left.
+//
+// Key formats:
+//
+//	health:{chain}:{endpoint}
+//	metrics:{chain}:{endpoint}:{requestType}
+//	rate_limit:{chain}:{endpoint}
+//	capacity_estimate:{chain}:{endpoint}
+func parseChainEndpointFromKey(key, prefix string) (chain, endpoint string, ok bool) {
+	withoutPrefix := key[len(prefix):]
+	chain, rest, ok := strings.Cut(withoutPrefix, ":")
+	if !ok {
+		return "", "", false
+	}
+
+	endpoint = rest
+	if prefix == metricsPrefix {
+		// Metrics keys have a trailing ":{requestType}" suffix. requestType
+		// (proxy_requests/health_requests) never contains a colon, so the last colon is
+		// the boundary regardless of colons in the endpoint.
+		idx := strings.LastIndex(rest, ":")
+		if idx == -1 {
+			return "", "", false
+		}
+		endpoint = rest[:idx]
+	}
+
+	return chain, endpoint, true
+}
+
 // CleanupStaleEndpoints removes all Valkey keys for endpoints that are no longer in the active config.
 // activeEndpoints maps chain names to slices of endpoint IDs that are currently configured.
 // Returns the number of keys deleted and any error encountered.
@@ -288,17 +321,10 @@ func (r *ValkeyClient) CleanupStaleEndpoints(ctx context.Context, activeEndpoint
 			}
 
 			for _, key := range scanResult.Elements {
-				// Parse chain and endpoint from the key.
-				// Key formats:
-				//   health:{chain}:{endpoint}
-				//   metrics:{chain}:{endpoint}:...
-				//   rate_limit:{chain}:{endpoint}
-				withoutPrefix := key[len(prefix):]
-				chain, rest, ok := strings.Cut(withoutPrefix, ":")
+				chain, endpoint, ok := parseChainEndpointFromKey(key, prefix)
 				if !ok {
 					continue
 				}
-				endpoint, _, _ := strings.Cut(rest, ":")
 
 				if _, ok := active[chain+":"+endpoint]; !ok {
 					staleKeys = append(staleKeys, key)

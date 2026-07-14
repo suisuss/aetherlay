@@ -376,6 +376,100 @@ func TestCapacityCountWindowRollover(t *testing.T) {
 	}
 }
 
+// TestParseChainEndpointFromKey guards against a regression where colons inside a
+// URL-shaped endpoint ID (the common case, e.g. "https://test.example.com:8545") were
+// mistaken for field separators and truncated the endpoint, which made
+// CleanupStaleEndpoints treat still-active endpoints as stale and delete their keys.
+func TestParseChainEndpointFromKey(t *testing.T) {
+	tests := []struct {
+		name         string
+		key          string
+		prefix       string
+		wantChain    string
+		wantEndpoint string
+		wantOK       bool
+	}{
+		{
+			name:         "health key with plain endpoint",
+			key:          "health:ethereum:alchemy-1",
+			prefix:       healthPrefix,
+			wantChain:    "ethereum",
+			wantEndpoint: "alchemy-1",
+			wantOK:       true,
+		},
+		{
+			name:         "health key with URL endpoint containing colons",
+			key:          "health:ethereum:https://test.example.com:8545",
+			prefix:       healthPrefix,
+			wantChain:    "ethereum",
+			wantEndpoint: "https://test.example.com:8545",
+			wantOK:       true,
+		},
+		{
+			name:         "rate_limit key with URL endpoint containing colons",
+			key:          "rate_limit:ethereum:https://test.example.com:8545",
+			prefix:       rateLimitPrefix,
+			wantChain:    "ethereum",
+			wantEndpoint: "https://test.example.com:8545",
+			wantOK:       true,
+		},
+		{
+			name:         "capacity_estimate key with URL endpoint containing colons",
+			key:          "capacity_estimate:ethereum:https://test.example.com:8545",
+			prefix:       capacityEstimatePrefix,
+			wantChain:    "ethereum",
+			wantEndpoint: "https://test.example.com:8545",
+			wantOK:       true,
+		},
+		{
+			name:         "metrics key with plain endpoint and trailing requestType",
+			key:          "metrics:ethereum:alchemy-1:proxy_requests",
+			prefix:       metricsPrefix,
+			wantChain:    "ethereum",
+			wantEndpoint: "alchemy-1",
+			wantOK:       true,
+		},
+		{
+			name:         "metrics key with URL endpoint containing colons and trailing requestType",
+			key:          "metrics:ethereum:https://test.example.com:8545:health_requests",
+			prefix:       metricsPrefix,
+			wantChain:    "ethereum",
+			wantEndpoint: "https://test.example.com:8545",
+			wantOK:       true,
+		},
+		{
+			name:   "key with no separator after chain is rejected",
+			key:    "health:ethereum",
+			prefix: healthPrefix,
+			wantOK: false,
+		},
+		{
+			name:   "metrics key missing requestType suffix is rejected",
+			key:    "metrics:ethereum:alchemy-1",
+			prefix: metricsPrefix,
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chain, endpoint, ok := parseChainEndpointFromKey(tt.key, tt.prefix)
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if !tt.wantOK {
+				return
+			}
+			if chain != tt.wantChain {
+				t.Errorf("chain = %q, want %q", chain, tt.wantChain)
+			}
+			if endpoint != tt.wantEndpoint {
+				t.Errorf("endpoint = %q, want %q", endpoint, tt.wantEndpoint)
+			}
+		})
+	}
+}
+
 // TestNewValkeyClientTLSConfig is an integration test that checks the TLS configuration.
 // It requires a running Valkey server with TLS enabled on port 6380 and non-TLS on 6379.
 func TestNewValkeyClientTLSConfig(t *testing.T) {
