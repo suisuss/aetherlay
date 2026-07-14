@@ -411,6 +411,9 @@ func capacityBucketKey(chain, endpoint string, windowSeconds int) string {
 // Used to proactively throttle requests below a configured ceiling, independent of
 // any provider-reported rate limit state.
 func (r *ValkeyClient) IncrementCapacityCount(ctx context.Context, chain, endpoint string, windowSeconds int) (int64, error) {
+	if windowSeconds <= 0 {
+		windowSeconds = 1
+	}
 	key := capacityBucketKey(chain, endpoint, windowSeconds)
 
 	cmds := []valkey.Completed{
