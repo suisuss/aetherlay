@@ -13,6 +13,7 @@ func TestIsJSONRPCRateLimitCode(t *testing.T) {
 		expected bool
 	}{
 		{"rate limit code -32005", -32005, true},
+		{"rate limit code 429", 429, true},
 		{"method not found code", -32601, false},
 		{"generic error code", -32000, false},
 		{"zero code", 0, false},

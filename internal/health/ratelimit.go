@@ -19,8 +19,10 @@ type RateLimitSignal struct {
 
 // IsJSONRPCRateLimitCode reports whether a JSON-RPC error code indicates rate limiting.
 // -32005 is the standard "Request limit exceeded" code used by Infura, Alchemy, and others.
+// 429 shows up too, since some providers embed the HTTP status code directly in the
+// JSON-RPC error body instead of (or in addition to) using it as the HTTP status.
 func IsJSONRPCRateLimitCode(code int) bool {
-	return code == -32005
+	return code == -32005 || code == 429
 }
 
 // DetectRateLimit inspects an HTTP response (status code + headers) and, when available,
