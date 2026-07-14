@@ -147,11 +147,11 @@ func (m *MockValkeyClient) SetRateLimitState(_ context.Context, chain, endpoint 
 // endpoint's current fixed window (bucketed by NowFunc().Unix()/windowSeconds, mirroring
 // the real ValkeyClient's bucketing) and returns the new count.
 func (m *MockValkeyClient) IncrementCapacityCount(_ context.Context, chain, endpoint string, windowSeconds int) (int64, error) {
+	if windowSeconds <= 0 {
+		return 0, fmt.Errorf("IncrementCapacityCount: windowSeconds must be positive, got %d", windowSeconds)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if windowSeconds <= 0 {
-		windowSeconds = 1
-	}
 	key := chain + ":" + endpoint
 	bucket := m.NowFunc().Unix() / int64(windowSeconds)
 	if _, ok := m.capacityCounts[key]; !ok {

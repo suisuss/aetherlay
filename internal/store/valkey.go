@@ -438,7 +438,7 @@ func capacityBucketKey(chain, endpoint string, windowSeconds int) string {
 // any provider-reported rate limit state.
 func (r *ValkeyClient) IncrementCapacityCount(ctx context.Context, chain, endpoint string, windowSeconds int) (int64, error) {
 	if windowSeconds <= 0 {
-		windowSeconds = 1
+		return 0, fmt.Errorf("IncrementCapacityCount: windowSeconds must be positive, got %d", windowSeconds)
 	}
 	key := capacityBucketKey(chain, endpoint, windowSeconds)
 

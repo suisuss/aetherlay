@@ -325,16 +325,17 @@ func TestGetCapacityCountForUnusedEndpointReturnsZero(t *testing.T) {
 	}
 }
 
-// TestCapacityCountRejectsNonPositiveWindowSeconds verifies that GetCapacityCount
-// returns an error for invalid windowSeconds values rather than silently clamping
-// or panicking, so callers receive a clear signal and can fail-open gracefully.
+// TestCapacityCountRejectsNonPositiveWindowSeconds verifies that both IncrementCapacityCount
+// and GetCapacityCount return an error for invalid windowSeconds values rather than
+// silently clamping or panicking, so callers receive a clear signal and can fail-open
+// gracefully, and no invalid write is accepted into the wrong bucket.
 func TestCapacityCountRejectsNonPositiveWindowSeconds(t *testing.T) {
 	client := NewMockValkeyClient()
 	ctx := context.Background()
 
 	for _, windowSeconds := range []int{0, -1, -100} {
-		if _, err := client.IncrementCapacityCount(ctx, "test-chain", "ep1", windowSeconds); err != nil {
-			t.Fatalf("IncrementCapacityCount(windowSeconds=%d) failed: %v", windowSeconds, err)
+		if _, err := client.IncrementCapacityCount(ctx, "test-chain", "ep1", windowSeconds); err == nil {
+			t.Errorf("IncrementCapacityCount(windowSeconds=%d) expected error, got nil", windowSeconds)
 		}
 		if _, err := client.GetCapacityCount(ctx, "test-chain", "ep1", windowSeconds); err == nil {
 			t.Errorf("GetCapacityCount(windowSeconds=%d) expected error, got nil", windowSeconds)
