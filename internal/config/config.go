@@ -162,6 +162,22 @@ func validateEndpointCapacityLearning(chain, endpointID string, endpoint *Endpoi
 			Msg("Endpoint's capacity_learning.decrease_factor must be in (0, 1) - resetting to default")
 		endpoint.CapacityLearning.DecreaseFactor = 0
 	}
+	if endpoint.CapacityLearning.IncreaseInterval < 0 {
+		log.Warn().
+			Str("chain", chain).
+			Str("endpoint", endpointID).
+			Int("increase_interval", endpoint.CapacityLearning.IncreaseInterval).
+			Msg("Endpoint's capacity_learning.increase_interval must not be negative - resetting to default")
+		endpoint.CapacityLearning.IncreaseInterval = 0
+	}
+	if endpoint.CapacityLearning.MinEstimate < 0 {
+		log.Warn().
+			Str("chain", chain).
+			Str("endpoint", endpointID).
+			Int("min_estimate", endpoint.CapacityLearning.MinEstimate).
+			Msg("Endpoint's capacity_learning.min_estimate must not be negative - resetting to default")
+		endpoint.CapacityLearning.MinEstimate = 0
+	}
 }
 
 // GetEndpointsForChain returns all endpoints for a specific chain.

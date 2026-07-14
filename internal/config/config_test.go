@@ -649,3 +649,72 @@ func TestLoadConfigResetsOutOfRangeCapacityLearningDecreaseFactor(t *testing.T) 
 		t.Errorf("Expected valid decrease_factor to be untouched (0.75), got %f", valid.CapacityLearning.DecreaseFactor)
 	}
 }
+
+// TestLoadConfigResetsNegativeCapacityLearningIncreaseIntervalAndMinEstimate guards
+// against negative IncreaseInterval or MinEstimate overrides reaching ResolveCapacityLearning,
+// which only falls back to the package default on exactly zero - a negative value would
+// otherwise silently propagate into the AIMD control loop. Both are reset to zero so the
+// package default is used instead.
+func TestLoadConfigResetsNegativeCapacityLearningIncreaseIntervalAndMinEstimate(t *testing.T) {
+	tmpFile := "test_negative_cl_interval_estimate.json"
+	content := `{
+		"ethereum": {
+			"negative-interval": {
+				"provider": "alchemy",
+				"role": "primary",
+				"type": "full",
+				"http_url": "http://test.com",
+				"capacity_learning": {"increase_interval": -10}
+			},
+			"negative-estimate": {
+				"provider": "alchemy",
+				"role": "primary",
+				"type": "full",
+				"http_url": "http://test2.com",
+				"capacity_learning": {"min_estimate": -1}
+			},
+			"valid-values": {
+				"provider": "alchemy",
+				"role": "primary",
+				"type": "full",
+				"http_url": "http://test3.com",
+				"capacity_learning": {"increase_interval": 30, "min_estimate": 2}
+			}
+		}
+	}`
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	defer os.Remove(tmpFile)
+
+	cfg, err := LoadConfig(tmpFile)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	endpoints := cfg.Endpoints["ethereum"]
+
+	if endpoints["negative-interval"].CapacityLearning == nil {
+		t.Fatal("Expected CapacityLearning struct to remain (only the bad field is reset)")
+	}
+	if endpoints["negative-interval"].CapacityLearning.IncreaseInterval != 0 {
+		t.Errorf("Expected negative increase_interval to be reset to 0, got %d", endpoints["negative-interval"].CapacityLearning.IncreaseInterval)
+	}
+	if endpoints["negative-estimate"].CapacityLearning == nil {
+		t.Fatal("Expected CapacityLearning struct to remain (only the bad field is reset)")
+	}
+	if endpoints["negative-estimate"].CapacityLearning.MinEstimate != 0 {
+		t.Errorf("Expected negative min_estimate to be reset to 0, got %d", endpoints["negative-estimate"].CapacityLearning.MinEstimate)
+	}
+
+	valid := endpoints["valid-values"]
+	if valid.CapacityLearning == nil {
+		t.Fatal("Expected CapacityLearning to remain set for valid overrides")
+	}
+	if valid.CapacityLearning.IncreaseInterval != 30 {
+		t.Errorf("Expected valid increase_interval to be untouched (30), got %d", valid.CapacityLearning.IncreaseInterval)
+	}
+	if valid.CapacityLearning.MinEstimate != 2 {
+		t.Errorf("Expected valid min_estimate to be untouched (2), got %d", valid.CapacityLearning.MinEstimate)
+	}
+}
