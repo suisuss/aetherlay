@@ -51,10 +51,12 @@ func standaloneInitialBackoff(cfg *config.Config, chain, endpointID string, sign
 func applyStandaloneLearnedCapacityDecrease(cfg *config.Config, valkeyClient store.ValkeyClientIface, capacityThrottlingEnabled, capacityLearningEnabled bool, chain, endpointID string, signal health.RateLimitSignal) {
 	chainEndpoints, ok := cfg.GetEndpointsForChain(chain)
 	if !ok {
+		log.Warn().Str("chain", chain).Msg("Standalone health checker: chain not found for capacity decrease")
 		return
 	}
 	ep, ok := chainEndpoints[endpointID]
 	if !ok {
+		log.Warn().Str("chain", chain).Str("endpoint", endpointID).Msg("Standalone health checker: endpoint not found for capacity decrease")
 		return
 	}
 
